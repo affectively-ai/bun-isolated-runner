@@ -14,7 +14,7 @@ Bun's test runner is **blazing fast** because it reuses the same process for all
 import { mock } from 'bun:test';
 mock.module('firebase/firestore', () => ({ getDoc: mock(() => 'mocked') }));
 
-// test-b.test.ts - THIS STILL SEES THE MOCK FROM TEST A! 😱
+// test-b.test.ts - THIS STILL SEES THE MOCK FROM TEST A! 
 import { getDoc } from 'firebase/firestore';
 // getDoc is still mocked, even though we didn't mock it here
 ```
@@ -70,11 +70,11 @@ npx bun-isolated --parallel=1
 
 ```json
 {
-  "scripts": {
-    "test": "bun-isolated",
-    "test:watch": "bun-isolated --watch",
-    "test:ci": "bun-isolated --parallel=$(nproc)"
-  }
+ "scripts": {
+ "test": "bun-isolated",
+ "test:watch": "bun-isolated --watch",
+ "test:ci": "bun-isolated --parallel=$(nproc)"
+ }
 }
 ```
 
@@ -88,9 +88,9 @@ const files = await findTestFiles('src/**/*.test.ts');
 
 // Run them in isolation
 const results = await runIsolated(files, {
-  parallel: 4,
-  timeout: 30000,
-  env: { NODE_ENV: 'test' }
+ parallel: 4,
+ timeout: 30000,
+ env: { NODE_ENV: 'test' }
 });
 
 console.log(`Passed: ${results.passed}, Failed: ${results.failed}`);
@@ -105,15 +105,15 @@ console.log(`Passed: ${results.passed}, Failed: ${results.failed}`);
 
 ```
 ┌─────────────────────────────────────┐
-│ bun-isolated                        │
+│ bun-isolated │
 ├─────────────────────────────────────┤
-│  ┌─────────┐  ┌─────────┐           │
-│  │ bun test│  │ bun test│  ...      │
-│  │ file1.ts│  │ file2.ts│           │
-│  └─────────┘  └─────────┘           │
-│       │            │                │
-│   Clean VM    Clean VM              │
-│   No leaks    No leaks              │
+│ ┌─────────┐ ┌─────────┐ │
+│ │ bun test│ │ bun test│ ... │
+│ │ file1.ts│ │ file2.ts│ │
+│ └─────────┘ └─────────┘ │
+│ │ │ │
+│ Clean VM Clean VM │
+│ No leaks No leaks │
 └─────────────────────────────────────┘
 ```
 
@@ -125,36 +125,36 @@ console.log(`Passed: ${results.passed}, Failed: ${results.failed}`);
 import type { IsolatedConfig } from '@affectively/bun-isolated-runner';
 
 export default {
-  // Test file patterns
-  include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
-  exclude: ['**/node_modules/**'],
-  
-  // Execution
-  parallel: 4,           // Number of parallel workers
-  timeout: 30000,        // Per-test timeout (ms)
-  retries: 0,            // Retry failed tests
-  
-  // Environment
-  env: {
-    NODE_ENV: 'test',
-    TZ: 'UTC'
-  },
-  
-  // Reporting
-  reporter: 'default',   // 'default' | 'json' | 'junit'
-  verbose: false,
+ // Test file patterns
+ include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+ exclude: ['**/node_modules/**'],
+ 
+ // Execution
+ parallel: 4, // Number of parallel workers
+ timeout: 30000, // Per-test timeout (ms)
+ retries: 0, // Retry failed tests
+ 
+ // Environment
+ env: {
+ NODE_ENV: 'test',
+ TZ: 'UTC'
+ },
+ 
+ // Reporting
+ reporter: 'default', // 'default' | 'json' | 'junit'
+ verbose: false,
 } satisfies IsolatedConfig;
 ```
 
 ## When to Use This
 
-✅ **Use bun-isolated when:**
+ **Use bun-isolated when:**
 - Tests use `mock.module()` extensively
 - You have singleton services (Firebase, DB connections)
 - Tests are flaky when run together but pass individually
 - You need Jest-like isolation guarantees
 
-❌ **Don't use when:**
+ **Don't use when:**
 - Tests are already fast and isolated
 - You don't use mocks
 - You need the absolute fastest test execution
@@ -163,9 +163,9 @@ export default {
 
 | Approach | 100 test files | Isolation |
 |----------|---------------|-----------|
-| `bun test` | ~2s | ❌ Shared |
-| `bun-isolated --parallel=8` | ~8s | ✅ Full |
-| `bun-isolated --parallel=1` | ~30s | ✅ Full |
+| `bun test` | ~2s | Shared |
+| `bun-isolated --parallel=8` | ~8s | Full |
+| `bun-isolated --parallel=1` | ~30s | Full |
 
 The overhead is ~3-5x, but **deterministic tests are worth it**.
 
@@ -194,4 +194,4 @@ MIT License - see [LICENSE](./LICENSE) for details.
 
 ---
 
-Made with ❤️ by [AFFECTIVELY](https://affectively.app)
+Made with ️ by [AFFECTIVELY](https://affectively.ai)

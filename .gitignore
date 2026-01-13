@@ -1,0 +1,10 @@
+node_modules
+dist
+target
+.env
+.DS_Store
+bun.lockb
+package-lock.json
+yarn.lock
+coverage
+.turbo

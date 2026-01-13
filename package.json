@@ -1,0 +1,57 @@
+{
+    "name": "@affectively/bun-isolated-runner",
+    "version": "1.0.0",
+    "description": "Run Bun tests in isolated subprocesses to prevent mock pollution and global state leakage.",
+    "main": "dist/index.js",
+    "module": "dist/index.mjs",
+    "types": "dist/index.d.ts",
+    "bin": {
+        "bun-isolated": "./dist/cli.js"
+    },
+    "exports": {
+        ".": {
+            "import": "./dist/index.mjs",
+            "require": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        }
+    },
+    "files": [
+        "dist",
+        "LICENSE",
+        "README.md"
+    ],
+    "scripts": {
+        "build": "tsup src/index.ts src/cli.ts --format cjs,esm --dts",
+        "prepublishOnly": "npm run build",
+        "test": "bun test"
+    },
+    "keywords": [
+        "bun",
+        "test",
+        "testing",
+        "isolated",
+        "subprocess",
+        "mock",
+        "cleanup",
+        "jest",
+        "vitest"
+    ],
+    "author": "AFFECTIVELY <opensource@affectively.app>",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/affectively-ai/bun-isolated-runner.git"
+    },
+    "bugs": {
+        "url": "https://github.com/affectively-ai/bun-isolated-runner/issues"
+    },
+    "homepage": "https://github.com/affectively-ai/bun-isolated-runner#readme",
+    "devDependencies": {
+        "@types/node": "^22.0.0",
+        "tsup": "^8.0.0",
+        "typescript": "^5.9.0"
+    },
+    "publishConfig": {
+        "access": "public"
+    }
+}

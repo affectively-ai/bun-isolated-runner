@@ -197,9 +197,9 @@ export async function runTestFile(
     return new Promise((resolve) => {
         const args = ['test'];
 
-        // Add preload if available
+        // Add preload if available (Bun uses --preload for test, not -r)
         if (preloadPath) {
-            args.push('-r', preloadPath);
+            args.push('--preload', preloadPath);
         }
 
         args.push('--timeout', String(timeout), testPath);
@@ -207,8 +207,12 @@ export async function runTestFile(
         // Use bun on all platforms
         const command = process.platform === 'win32' ? 'bun.exe' : 'bun';
 
+        // FORCE_COLOR=1 and remove NO_COLOR to avoid Node.js warnings in child
+        const spawnEnv = { ...process.env, ...env, FORCE_COLOR: '1' };
+        delete (spawnEnv as Record<string, unknown>)['NO_COLOR'];
+
         const proc: ChildProcess = spawn(command, args, {
-            env: { ...process.env, ...env },
+            env: spawnEnv,
             cwd,
             stdio: ['ignore', 'pipe', 'pipe'],
             shell: process.platform === 'win32', // Use shell on Windows

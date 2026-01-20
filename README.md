@@ -64,6 +64,12 @@ npx bun-isolated --parallel=4
 
 # Sequential (for debugging)
 npx bun-isolated --parallel=1
+
+# Preload script (overrides auto-detect of bun.preload.ts)
+npx bun-isolated --preload ./bun.preload.ts
+
+# Exclude paths (repeatable)
+npx bun-isolated --exclude src/app --exclude e2e
 ```
 
 ### package.json Integration

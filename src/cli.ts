@@ -24,6 +24,8 @@ Usage:
 Options:
   --changed              Run only changed test files (git diff)
   --files <files...>     Run specific test files
+  --preload <path>       Preload script (e.g. bun.preload.ts); overrides auto-detect
+  --exclude <pattern>    Exclude paths containing this (repeatable)
   --parallel=N           Number of parallel workers (default: ${getOptimalParallelCount()})
   --timeout=N            Per-test timeout in ms (default: 30000)
   --retries=N            Retry failed tests N times (default: 0)
@@ -49,6 +51,8 @@ async function main(): Promise<void> {
 
     // Parse arguments
     const patterns: string[] = [];
+    const excludePatterns: string[] = [];
+    let preloadPath: string | undefined;
     let mode: 'all' | 'changed' | 'files' = 'all';
     let specificFiles: string[] = [];
     let parallel = parseInt(process.env['JOBS'] || '', 10) || getOptimalParallelCount();
@@ -65,6 +69,14 @@ async function main(): Promise<void> {
             process.exit(0);
         } else if (arg === '--changed') {
             mode = 'changed';
+        } else if (arg === '--preload') {
+            if (i + 1 < args.length) {
+                preloadPath = args[++i];
+            }
+        } else if (arg === '--exclude') {
+            if (i + 1 < args.length) {
+                excludePatterns.push(args[++i]);
+            }
         } else if (arg === '--files') {
             mode = 'files';
             // Collect remaining args as files
@@ -103,7 +115,11 @@ async function main(): Promise<void> {
         files = specificFiles;
     } else {
         console.log('🔍 Finding test files...');
-        files = await findTestFiles(patterns.length > 0 ? patterns : undefined, { cwd });
+        const exclude =
+            excludePatterns.length > 0
+                ? ['**/node_modules/**', '**/dist/**', '**/build/**', ...excludePatterns]
+                : undefined;
+        files = await findTestFiles(patterns.length > 0 ? patterns : undefined, { cwd, exclude });
     }
 
     if (files.length === 0) {
@@ -118,6 +134,7 @@ async function main(): Promise<void> {
         retries,
         verbose,
         cwd,
+        ...(preloadPath && { preloadPath }),
     };
 
     const results = await runIsolated(files, config);

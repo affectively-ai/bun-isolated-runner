@@ -17,7 +17,7 @@ mock.module('firebase/firestore', () => ({ getDoc: mock(() => 'mocked') }));
 // test-b.test.ts - THIS STILL SEES THE MOCK FROM TEST A! 
 import { getDoc } from 'firebase/firestore';
 // getDoc is still mocked, even though we didn't mock it here
-```
+```text
 
 Unlike Jest, which runs each test file in isolation by default, Bun shares the module registry across all tests. This leads to:
 
@@ -33,7 +33,7 @@ Run each test file in its own subprocess:
 npx bun-isolated
 # or
 bun-isolated src/**/*.test.ts
-```
+```text
 
 Each test file gets a **fresh Bun process** with clean module registry. No mock pollution. No shared state. Tests run deterministically.
 
@@ -43,7 +43,7 @@ Each test file gets a **fresh Bun process** with clean module registry. No mock 
 npm install -D @affectively/bun-isolated-runner
 # or
 bun add -D @affectively/bun-isolated-runner
-```
+```text
 
 ## Quick Start
 
@@ -70,7 +70,7 @@ npx bun-isolated --preload ./bun.preload.ts
 
 # Exclude paths (repeatable)
 npx bun-isolated --exclude src/app --exclude e2e
-```
+```text
 
 ### package.json Integration
 
@@ -82,7 +82,7 @@ npx bun-isolated --exclude src/app --exclude e2e
  "test:ci": "bun-isolated --parallel=$(nproc)"
  }
 }
-```
+```text
 
 ### Programmatic API
 
@@ -100,7 +100,7 @@ const results = await runIsolated(files, {
 });
 
 console.log(`Passed: ${results.passed}, Failed: ${results.failed}`);
-```
+```text
 
 ## How It Works
 
@@ -109,7 +109,7 @@ console.log(`Passed: ${results.passed}, Failed: ${results.failed}`);
 3. **Isolation**: Each subprocess has a fresh module registry
 4. **Aggregation**: Collect results and report
 
-```
+```text
 ┌─────────────────────────────────────┐
 │ bun-isolated │
 ├─────────────────────────────────────┤
@@ -121,7 +121,7 @@ console.log(`Passed: ${results.passed}, Failed: ${results.failed}`);
 │ Clean VM Clean VM │
 │ No leaks No leaks │
 └─────────────────────────────────────┘
-```
+```text
 
 ## Configuration
 

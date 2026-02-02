@@ -80,7 +80,7 @@ export async function findTestFiles(
     '**/*.spec.ts',
     '**/*.spec.tsx',
   ],
-  options: { exclude?: string[]; cwd?: string } = {}
+  options: { exclude?: string[]; cwd?: string } = {},
 ): Promise<string[]> {
   const {
     exclude = ['**/node_modules/**', '**/dist/**', '**/build/**'],
@@ -101,7 +101,7 @@ export async function findTestFiles(
         const isExcluded = exclude.some((pattern) => {
           if (pattern.includes('*')) {
             return relativePath.includes(
-              pattern.replace(/\*\*/g, '').replace(/\*/g, '')
+              pattern.replace(/\*\*/g, '').replace(/\*/g, ''),
             );
           }
           return relativePath.includes(pattern);
@@ -139,7 +139,7 @@ export async function findTestFiles(
  * Find bun.preload.ts in common locations
  */
 export function findPreloadPath(
-  cwd: string = process.cwd()
+  cwd: string = process.cwd(),
 ): string | undefined {
   const candidates = [
     path.join(cwd, 'bun.preload.ts'),
@@ -193,7 +193,7 @@ function parseTestOutput(output: string): {
  */
 export async function runTestFile(
   file: string,
-  options: IsolatedConfig = {}
+  options: IsolatedConfig = {},
 ): Promise<TestResult> {
   const {
     timeout = 30000,
@@ -272,8 +272,8 @@ export async function runTestFile(
         error: timedOut
           ? 'Test timed out'
           : code !== 0
-          ? stderr || `Exit code: ${code}`
-          : undefined,
+            ? stderr || `Exit code: ${code}`
+            : undefined,
       });
     });
 
@@ -301,7 +301,7 @@ export async function runTestFile(
 async function runParallel(
   files: string[],
   concurrency: number,
-  options: IsolatedConfig
+  options: IsolatedConfig,
 ): Promise<TestResult[]> {
   const results: TestResult[] = [];
   const queue = [...files];
@@ -325,7 +325,7 @@ async function runParallel(
       console.log(
         `[${completed}/${total}] ${color}${status}${reset} ${result.file}: ` +
           `${result.passCount} pass, ${result.failCount} fail, ${result.skipCount} skip ` +
-          `(${result.duration}ms)`
+          `(${result.duration}ms)`,
       );
     }
   };
@@ -345,7 +345,7 @@ async function runParallel(
  */
 export async function runIsolated(
   files: string[],
-  options: IsolatedConfig = {}
+  options: IsolatedConfig = {},
 ): Promise<RunResults> {
   const {
     parallel = getOptimalParallelCount(),
@@ -360,7 +360,7 @@ export async function runIsolated(
   console.log(
     `   Workers: ${parallel} | Platform: ${process.platform} | Preload: ${
       preloadPath ? 'yes' : 'no'
-    }\n`
+    }\n`,
   );
   console.log('─'.repeat(60));
 
@@ -375,7 +375,7 @@ export async function runIsolated(
       const retryResults = await runParallel(
         failed.map((r) => r.file),
         parallel,
-        resolvedOptions
+        resolvedOptions,
       );
 
       // Replace results for retried tests

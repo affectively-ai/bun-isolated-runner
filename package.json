@@ -6,7 +6,7 @@
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "bin": {
-    "bun-isolated": "./dist/cli.js"
+    "bun-isolated": "dist/cli.js"
   },
   "exports": {
     ".": {

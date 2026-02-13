@@ -33,6 +33,10 @@ Options:
   --max-failures=N       Stop scheduling after N failed files
   --telemetry-log=<path> Write JSONL telemetry (default: .build-logs/bun-isolated-runner.jsonl)
   --no-telemetry         Disable telemetry logging
+  --sticky-pass          Skip unchanged files that previously passed
+  --no-sticky-pass       Disable sticky-pass caching
+  --sticky-pass-file=<p> Sticky-pass JSON cache path (default: .build-logs/bun-isolated-sticky.json)
+  --sticky-pass-reset    Delete sticky-pass cache before running
   --verbose, -v          Verbose output
   --cwd=<dir>            Working directory
   --help, -h             Show this help
@@ -44,11 +48,13 @@ Examples:
   bun-isolated --files a.test.ts b.test.ts
   bun-isolated --parallel=4             Limit parallelism
   bun-isolated --bail                   Fail fast after first failed file
+  bun-isolated --sticky-pass            Enable sticky pass caching
   bun-isolated --telemetry-log=.build-logs/isolated.jsonl
 
 Environment Variables:
   JOBS=N                 Override parallel count
   BUN_ISOLATED_TIMEOUT   Override timeout
+  BUN_ISOLATED_STICKY=1  Enable sticky pass caching by default
 `);
 }
 
@@ -70,6 +76,11 @@ async function main(): Promise<void> {
   let maxFailures: number | undefined;
   let telemetryEnabled = true;
   let telemetryLogPath: string | undefined;
+  const stickyEnvValue = process.env['BUN_ISOLATED_STICKY'];
+  let stickyPassEnabled =
+    stickyEnvValue === '1' || stickyEnvValue === 'true';
+  let stickyPassCachePath: string | undefined;
+  let stickyPassReset = false;
   let verbose = false;
   let cwd = process.cwd();
 
@@ -128,6 +139,19 @@ async function main(): Promise<void> {
       }
     } else if (arg === '--no-telemetry') {
       telemetryEnabled = false;
+    } else if (arg === '--sticky-pass') {
+      stickyPassEnabled = true;
+    } else if (arg === '--no-sticky-pass') {
+      stickyPassEnabled = false;
+    } else if (arg === '--sticky-pass-reset') {
+      stickyPassEnabled = true;
+      stickyPassReset = true;
+    } else if (arg.startsWith('--sticky-pass-file=')) {
+      stickyPassCachePath = arg.split('=')[1];
+    } else if (arg === '--sticky-pass-file') {
+      if (i + 1 < args.length) {
+        stickyPassCachePath = args[++i];
+      }
     } else if (arg === '--verbose' || arg === '-v') {
       verbose = true;
     } else if (arg.startsWith('--cwd=')) {
@@ -189,6 +213,9 @@ async function main(): Promise<void> {
     maxFailures,
     telemetryEnabled,
     telemetryLogPath,
+    stickyPassEnabled,
+    stickyPassCachePath,
+    stickyPassReset,
     verbose,
     cwd,
     ...(preloadPath && { preloadPath }),

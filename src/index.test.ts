@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-import { getOptimalParallelCount, runIsolated } from './index.ts';
+import { getOptimalParallelCount, runIsolated } from './index';
 
 const tempDirs: string[] = [];
 
@@ -94,6 +94,7 @@ describe('bun-isolated-runner', () => {
     const telemetry = JSON.parse(telemetryLine) as {
       discoveredFiles: number;
       executedFiles: number;
+      stickyHits: number;
       durationMs: number;
       p50Ms: number;
       p95Ms: number;
@@ -102,9 +103,40 @@ describe('bun-isolated-runner', () => {
 
     expect(telemetry.discoveredFiles).toBe(1);
     expect(telemetry.executedFiles).toBe(1);
+    expect(telemetry.stickyHits).toBe(0);
     expect(telemetry.durationMs).toBeGreaterThan(0);
     expect(telemetry.p50Ms).toBeGreaterThanOrEqual(0);
     expect(telemetry.p95Ms).toBeGreaterThanOrEqual(0);
     expect(telemetry.filesPerSecond).toBeGreaterThanOrEqual(0);
+  });
+
+  it('reuses sticky-pass cache for unchanged passing files', async () => {
+    const cwd = createTempDir();
+    writePassingTestFile(cwd, 'pass.test.ts');
+    const stickyPath = join(cwd, '.build-logs', 'sticky-pass.json');
+
+    const first = await runIsolated(['pass.test.ts'], {
+      cwd,
+      parallel: 1,
+      telemetryEnabled: false,
+      stickyPassEnabled: true,
+      stickyPassCachePath: stickyPath,
+      timeout: 20_000,
+    });
+    expect(first.failed).toBe(0);
+
+    const second = await runIsolated(['pass.test.ts'], {
+      cwd,
+      parallel: 1,
+      telemetryEnabled: false,
+      stickyPassEnabled: true,
+      stickyPassCachePath: stickyPath,
+      timeout: 20_000,
+    });
+
+    expect(second.failed).toBe(0);
+    expect(second.results.length).toBe(1);
+    expect(second.results[0]?.cached).toBeTrue();
+    expect(existsSync(stickyPath)).toBeTrue();
   });
 });

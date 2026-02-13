@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-02-13
+
+### Added
+
+- **`--sticky-pass`** - Skip unchanged test files that previously passed using a content fingerprint cache.
+- **`--sticky-pass-file <path>`** - Customize sticky-pass cache location.
+- **`--sticky-pass-reset`** - Clear sticky-pass cache before a run.
+- **`--no-sticky-pass`** - Disable sticky-pass mode when enabled via environment.
+- **`BUN_ISOLATED_STICKY=1`** - Enable sticky-pass mode by default.
+
+### Changed
+
+- Telemetry now includes **`stickyHits`** and config metadata for sticky-pass mode.
+- Final run summary now reports sticky hit counts when cache entries are used.
+
 ## [1.2.1] - 2026-02-13
 
 ### Fixed
@@ -42,5 +57,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preload scripts were not applied correctly due to using `-r`; they now use `--preload` as required by `bun test`.
 
 [1.1.0]: https://github.com/affectively-ai/bun-isolated-runner/compare/v1.0.0...v1.1.0
+[1.3.0]: https://github.com/affectively-ai/bun-isolated-runner/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/affectively-ai/bun-isolated-runner/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/affectively-ai/bun-isolated-runner/compare/v1.1.0...v1.2.0

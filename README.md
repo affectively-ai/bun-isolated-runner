@@ -82,6 +82,12 @@ npx bun-isolated --telemetry-log=.build-logs/isolated.jsonl
 
 # Disable telemetry logging
 npx bun-isolated --no-telemetry
+
+# Enable sticky-pass cache
+npx bun-isolated --sticky-pass
+
+# Reset sticky-pass cache for a fresh run
+npx bun-isolated --sticky-pass --sticky-pass-reset
 ```text
 
 ### package.json Integration
@@ -89,8 +95,8 @@ npx bun-isolated --no-telemetry
 ```json
 {
  "scripts": {
- "test": "bun-isolated",
- "test:changed": "bun-isolated --changed",
+ "test": "bun-isolated --sticky-pass",
+ "test:changed": "bun-isolated --changed --sticky-pass",
  "test:ci": "bun-isolated --parallel=4 --bail"
  }
 }
@@ -155,6 +161,9 @@ export default {
  maxFailures: Infinity, // Or set a number, e.g. 3
  telemetryEnabled: true, // Disable with false
  telemetryLogPath: '.build-logs/bun-isolated-runner.jsonl',
+ stickyPassEnabled: true, // Or set with --sticky-pass / BUN_ISOLATED_STICKY=1
+ stickyPassCachePath: '.build-logs/bun-isolated-sticky.json',
+ stickyPassReset: false,
  
  // Environment
  env: {
@@ -196,6 +205,7 @@ The overhead is ~3-5x, but **deterministic tests are worth it**.
 - `--bail` and `--max-failures=N` let CI fail fast and avoid spending time on known-bad runs.
 - JSONL telemetry (`--telemetry-log=<path>`) captures p50/p95/file-throughput trends for real performance tuning.
 - `--no-telemetry` keeps local runs quiet when metrics are not needed.
+- `--sticky-pass` reuses passing results for unchanged files to speed repeated local runs.
 
 ## API Reference
 

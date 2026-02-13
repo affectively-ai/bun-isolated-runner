@@ -8,6 +8,7 @@
  */
 
 import { spawn, type ChildProcess } from 'child_process';
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -35,6 +36,12 @@ export interface IsolatedConfig {
   telemetryEnabled?: boolean;
   /** JSONL telemetry output path (default: .build-logs/bun-isolated-runner.jsonl) */
   telemetryLogPath?: string;
+  /** Skip unchanged files that previously passed (default: false; true when BUN_ISOLATED_STICKY=1|true) */
+  stickyPassEnabled?: boolean;
+  /** JSON sticky-pass cache path (default: .build-logs/bun-isolated-sticky.json) */
+  stickyPassCachePath?: string;
+  /** Reset sticky-pass cache before run (default: false) */
+  stickyPassReset?: boolean;
   /** Environment variables */
   env?: Record<string, string>;
   /** Reporter type */
@@ -56,6 +63,7 @@ export interface TestResult {
   duration: number;
   output: string;
   error?: string;
+  cached?: boolean;
 }
 
 export interface RunResults {
@@ -73,6 +81,7 @@ interface TelemetrySummary {
   cwd: string;
   discoveredFiles: number;
   executedFiles: number;
+  stickyHits: number;
   passCount: number;
   failCount: number;
   skipCount: number;
@@ -85,10 +94,26 @@ interface TelemetrySummary {
     parallel: number;
     retries: number;
     maxFailures: number;
+    stickyPassEnabled: boolean;
   };
 }
 
 const DEFAULT_TELEMETRY_LOG_PATH = '.build-logs/bun-isolated-runner.jsonl';
+const DEFAULT_STICKY_PASS_CACHE_PATH = '.build-logs/bun-isolated-sticky.json';
+const STICKY_PASS_CACHE_VERSION = 1;
+
+interface StickyPassCacheEntry {
+  fingerprint: string;
+  passCount: number;
+  skipCount: number;
+  updatedAt: string;
+}
+
+interface StickyPassCachePayload {
+  version: number;
+  updatedAt: string;
+  entries: Record<string, StickyPassCacheEntry>;
+}
 
 // ============================================================================
 // Cross-Platform Utilities
@@ -219,6 +244,143 @@ function parseTestOutput(output: string): {
   };
 }
 
+function hashToHex(value: string | Buffer): string {
+  const hash = createHash('sha1');
+  hash.update(value);
+  return hash.digest('hex');
+}
+
+function hashFileIfExists(filePath: string | undefined): string {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return 'missing';
+  }
+
+  try {
+    return hashToHex(fs.readFileSync(filePath));
+  } catch {
+    return 'missing';
+  }
+}
+
+function emptyStickyPassCache(): StickyPassCachePayload {
+  return {
+    version: STICKY_PASS_CACHE_VERSION,
+    updatedAt: new Date().toISOString(),
+    entries: {},
+  };
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function loadStickyPassCache(
+  cachePath: string,
+  reset: boolean,
+): StickyPassCachePayload {
+  if (reset && fs.existsSync(cachePath)) {
+    try {
+      fs.rmSync(cachePath, { force: true });
+      console.log(`\n🔁 Reset sticky-pass cache at ${cachePath}`);
+    } catch (error) {
+      console.warn(
+        `\n⚠️  Failed to reset sticky-pass cache at ${cachePath}: ${String(error)}`,
+      );
+    }
+  }
+
+  if (!fs.existsSync(cachePath)) {
+    return emptyStickyPassCache();
+  }
+
+  try {
+    const raw = JSON.parse(fs.readFileSync(cachePath, 'utf8')) as unknown;
+    if (!isObjectRecord(raw) || raw['version'] !== STICKY_PASS_CACHE_VERSION) {
+      return emptyStickyPassCache();
+    }
+
+    const loaded = emptyStickyPassCache();
+    const rawEntries = raw['entries'];
+    if (!isObjectRecord(rawEntries)) {
+      return loaded;
+    }
+
+    for (const [filePath, entryValue] of Object.entries(rawEntries)) {
+      if (!isObjectRecord(entryValue)) continue;
+      const fingerprint = entryValue['fingerprint'];
+      const passCount = entryValue['passCount'];
+      const skipCount = entryValue['skipCount'];
+      if (
+        typeof fingerprint !== 'string' ||
+        typeof passCount !== 'number' ||
+        typeof skipCount !== 'number'
+      ) {
+        continue;
+      }
+
+      loaded.entries[filePath] = {
+        fingerprint,
+        passCount,
+        skipCount,
+        updatedAt:
+          typeof entryValue['updatedAt'] === 'string'
+            ? entryValue['updatedAt']
+            : new Date().toISOString(),
+      };
+    }
+
+    return loaded;
+  } catch (error) {
+    console.warn(
+      `\n⚠️  Failed to read sticky-pass cache at ${cachePath}: ${String(error)}`,
+    );
+    return emptyStickyPassCache();
+  }
+}
+
+function writeStickyPassCache(
+  cachePath: string,
+  payload: StickyPassCachePayload,
+): void {
+  payload.updatedAt = new Date().toISOString();
+  try {
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    fs.writeFileSync(cachePath, JSON.stringify(payload), { encoding: 'utf8' });
+  } catch (error) {
+    console.warn(
+      `\n⚠️  Failed to write sticky-pass cache at ${cachePath}: ${String(error)}`,
+    );
+  }
+}
+
+function buildStickyRunSalt(options: {
+  preloadPath?: string;
+  timeout: number;
+}): string {
+  return hashToHex(
+    [
+      `v=${STICKY_PASS_CACHE_VERSION}`,
+      `bun=${process.versions['bun'] || process.version}`,
+      `preload=${hashFileIfExists(options.preloadPath)}`,
+      `timeout=${options.timeout}`,
+    ].join('|'),
+  );
+}
+
+function buildStickyFingerprint(
+  file: string,
+  cwd: string,
+  runSalt: string,
+): string | null {
+  const absolutePath = path.isAbsolute(file) ? file : path.join(cwd, file);
+  try {
+    const fileHash = hashToHex(fs.readFileSync(absolutePath));
+    return hashToHex(`${runSalt}|${file}|${fileHash}`);
+  } catch {
+    return null;
+  }
+}
+
 function calculatePercentile(values: number[], percentile: number): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -238,19 +400,24 @@ function buildTelemetrySummary(
   parallel: number,
   retries: number,
   maxFailures: number,
+  stickyPassEnabled: boolean,
 ): TelemetrySummary {
-  const executedFiles = results.length;
+  const executedFiles = results.filter((result) => !result.cached).length;
+  const stickyHits = results.length - executedFiles;
   const passCount = results.reduce((sum, result) => sum + result.passCount, 0);
   const failCount = results.reduce((sum, result) => sum + result.failCount, 0);
   const skipCount = results.reduce((sum, result) => sum + result.skipCount, 0);
   const failedFiles = results.filter((result) => !result.passed).length;
-  const perFileDurations = results.map((result) => result.duration);
+  const perFileDurations = results
+    .filter((result) => !result.cached)
+    .map((result) => result.duration);
 
   return {
     timestamp: new Date().toISOString(),
     cwd,
     discoveredFiles,
     executedFiles,
+    stickyHits,
     passCount,
     failCount,
     skipCount,
@@ -264,6 +431,7 @@ function buildTelemetrySummary(
       parallel,
       retries,
       maxFailures: Number.isFinite(maxFailures) ? maxFailures : -1,
+      stickyPassEnabled,
     },
   };
 }
@@ -456,6 +624,9 @@ export async function runIsolated(
   files: string[],
   options: IsolatedConfig = {},
 ): Promise<RunResults> {
+  const stickyEnvValue = process.env['BUN_ISOLATED_STICKY'];
+  const stickyEnvEnabled =
+    stickyEnvValue === '1' || stickyEnvValue === 'true';
   const {
     parallel = getOptimalParallelCount(),
     retries = 0,
@@ -463,8 +634,12 @@ export async function runIsolated(
     maxFailures,
     telemetryEnabled = true,
     telemetryLogPath = DEFAULT_TELEMETRY_LOG_PATH,
+    stickyPassEnabled = stickyEnvEnabled,
+    stickyPassCachePath = DEFAULT_STICKY_PASS_CACHE_PATH,
+    stickyPassReset = false,
     cwd = process.cwd(),
     preloadPath = findPreloadPath(cwd),
+    timeout = 30000,
   } = options;
   const safeMaxFailures = Number.isFinite(maxFailures || NaN)
     ? Math.max(1, maxFailures as number)
@@ -475,6 +650,9 @@ export async function runIsolated(
   const resolvedTelemetryPath = path.isAbsolute(telemetryLogPath)
     ? telemetryLogPath
     : path.join(cwd, telemetryLogPath);
+  const resolvedStickyPassPath = path.isAbsolute(stickyPassCachePath)
+    ? stickyPassCachePath
+    : path.join(cwd, stickyPassCachePath);
 
   const startTime = Date.now();
 
@@ -485,10 +663,66 @@ export async function runIsolated(
     }\n`,
   );
   console.log('─'.repeat(60));
+  if (stickyPassEnabled) {
+    console.log(`sticky-pass cache: ${resolvedStickyPassPath}`);
+  }
 
-  const resolvedOptions = { ...options, parallel, preloadPath, cwd };
-  let results = await runParallel(
-    files,
+  const resolvedOptions = {
+    ...options,
+    parallel,
+    preloadPath,
+    cwd,
+    timeout,
+  };
+
+  const stickyCache = stickyPassEnabled
+    ? loadStickyPassCache(resolvedStickyPassPath, stickyPassReset)
+    : emptyStickyPassCache();
+  const stickyFingerprintByFile: Record<string, string> = {};
+  const stickyCachedResults: TestResult[] = [];
+  const runnableFiles: string[] = [];
+
+  if (stickyPassEnabled) {
+    const runSalt = buildStickyRunSalt({
+      preloadPath,
+      timeout,
+    });
+    for (const file of files) {
+      const fingerprint = buildStickyFingerprint(file, cwd, runSalt);
+      if (!fingerprint) {
+        runnableFiles.push(file);
+        continue;
+      }
+
+      stickyFingerprintByFile[file] = fingerprint;
+      const cachedEntry = stickyCache.entries[file];
+      if (cachedEntry && cachedEntry.fingerprint === fingerprint) {
+        stickyCachedResults.push({
+          file,
+          passed: true,
+          passCount: Math.max(0, cachedEntry.passCount),
+          failCount: 0,
+          skipCount: Math.max(0, cachedEntry.skipCount),
+          duration: 0,
+          output: 'sticky-pass cache hit',
+          cached: true,
+        });
+      } else {
+        runnableFiles.push(file);
+      }
+    }
+
+    if (stickyCachedResults.length > 0) {
+      console.log(
+        `sticky-pass hits: ${stickyCachedResults.length}/${files.length}`,
+      );
+    }
+  } else {
+    runnableFiles.push(...files);
+  }
+
+  let runResults = await runParallel(
+    runnableFiles,
     parallel,
     resolvedOptions,
     resolvedMaxFailures,
@@ -496,7 +730,7 @@ export async function runIsolated(
 
   // Retry failed tests
   if (retries > 0) {
-    const failed = results.filter((r) => !r.passed);
+    const failed = runResults.filter((r) => !r.passed);
     if (failed.length > 0) {
       console.log(`\n🔄 Retrying ${failed.length} failed tests...\n`);
       const retryResults = await runParallel(
@@ -508,11 +742,33 @@ export async function runIsolated(
 
       // Replace results for retried tests
       for (const retry of retryResults) {
-        const idx = results.findIndex((r) => r.file === retry.file);
-        if (idx >= 0) results[idx] = retry;
+        const idx = runResults.findIndex((r) => r.file === retry.file);
+        if (idx >= 0) runResults[idx] = retry;
       }
     }
   }
+
+  if (stickyPassEnabled) {
+    for (const result of runResults) {
+      const fingerprint = stickyFingerprintByFile[result.file];
+      if (!fingerprint) {
+        continue;
+      }
+      if (result.passed) {
+        stickyCache.entries[result.file] = {
+          fingerprint,
+          passCount: Math.max(0, result.passCount),
+          skipCount: Math.max(0, result.skipCount),
+          updatedAt: new Date().toISOString(),
+        };
+      } else {
+        delete stickyCache.entries[result.file];
+      }
+    }
+    writeStickyPassCache(resolvedStickyPassPath, stickyCache);
+  }
+
+  const results = [...stickyCachedResults, ...runResults];
 
   // Calculate totals
   const totalPass = results.reduce((sum, r) => sum + r.passCount, 0);
@@ -529,6 +785,7 @@ export async function runIsolated(
     parallel,
     retries,
     resolvedMaxFailures,
+    stickyPassEnabled,
   );
   if (telemetryEnabled) {
     writeTelemetry(resolvedTelemetryPath, telemetry);
@@ -548,6 +805,9 @@ export async function runIsolated(
   console.log(`p50: ${telemetry.p50Ms}ms`);
   console.log(`p95: ${telemetry.p95Ms}ms`);
   console.log(`files/sec: ${telemetry.filesPerSecond}`);
+  if (telemetry.stickyHits > 0) {
+    console.log(`sticky hits: ${telemetry.stickyHits}`);
+  }
   if (telemetryEnabled) {
     console.log(`telemetry: ${resolvedTelemetryPath}`);
   }

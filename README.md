@@ -70,6 +70,18 @@ npx bun-isolated --preload ./bun.preload.ts
 
 # Exclude paths (repeatable)
 npx bun-isolated --exclude src/app --exclude e2e
+
+# Fail fast after first failed file
+npx bun-isolated --bail
+
+# Stop after 3 failed files
+npx bun-isolated --max-failures=3
+
+# Write telemetry to a custom JSONL path
+npx bun-isolated --telemetry-log=.build-logs/isolated.jsonl
+
+# Disable telemetry logging
+npx bun-isolated --no-telemetry
 ```text
 
 ### package.json Integration
@@ -78,8 +90,8 @@ npx bun-isolated --exclude src/app --exclude e2e
 {
  "scripts": {
  "test": "bun-isolated",
- "test:watch": "bun-isolated --watch",
- "test:ci": "bun-isolated --parallel=$(nproc)"
+ "test:changed": "bun-isolated --changed",
+ "test:ci": "bun-isolated --parallel=4 --bail"
  }
 }
 ```text
@@ -139,6 +151,10 @@ export default {
  parallel: 4, // Number of parallel workers
  timeout: 30000, // Per-test timeout (ms)
  retries: 0, // Retry failed tests
+ bail: false, // Stop after first failed file
+ maxFailures: Infinity, // Or set a number, e.g. 3
+ telemetryEnabled: true, // Disable with false
+ telemetryLogPath: '.build-logs/bun-isolated-runner.jsonl',
  
  // Environment
  env: {
@@ -174,6 +190,12 @@ export default {
 | `bun-isolated --parallel=1` | ~30s | Full |
 
 The overhead is ~3-5x, but **deterministic tests are worth it**.
+
+## New Normal Defaults
+
+- `--bail` and `--max-failures=N` let CI fail fast and avoid spending time on known-bad runs.
+- JSONL telemetry (`--telemetry-log=<path>`) captures p50/p95/file-throughput trends for real performance tuning.
+- `--no-telemetry` keeps local runs quiet when metrics are not needed.
 
 ## API Reference
 

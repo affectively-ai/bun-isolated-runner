@@ -27,6 +27,14 @@ export interface IsolatedConfig {
   timeout?: number;
   /** Number of retries for failed tests (default: 0) */
   retries?: number;
+  /** Stop scheduling new tests after first failed file */
+  bail?: boolean;
+  /** Stop scheduling new tests after N failed files */
+  maxFailures?: number;
+  /** Disable telemetry logging when false (default: true) */
+  telemetryEnabled?: boolean;
+  /** JSONL telemetry output path (default: .build-logs/bun-isolated-runner.jsonl) */
+  telemetryLogPath?: string;
   /** Environment variables */
   env?: Record<string, string>;
   /** Reporter type */
@@ -57,7 +65,30 @@ export interface RunResults {
   totalTests: number;
   duration: number;
   results: TestResult[];
+  stoppedEarly: boolean;
 }
+
+interface TelemetrySummary {
+  timestamp: string;
+  cwd: string;
+  discoveredFiles: number;
+  executedFiles: number;
+  passCount: number;
+  failCount: number;
+  skipCount: number;
+  failedFiles: number;
+  durationMs: number;
+  filesPerSecond: number;
+  p50Ms: number;
+  p95Ms: number;
+  config: {
+    parallel: number;
+    retries: number;
+    maxFailures: number;
+  };
+}
+
+const DEFAULT_TELEMETRY_LOG_PATH = '.build-logs/bun-isolated-runner.jsonl';
 
 // ============================================================================
 // Cross-Platform Utilities
@@ -188,6 +219,68 @@ function parseTestOutput(output: string): {
   };
 }
 
+function calculatePercentile(values: number[], percentile: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const clamped = Math.max(0, Math.min(1, percentile));
+  const index = Math.max(
+    0,
+    Math.min(sorted.length - 1, Math.ceil(clamped * sorted.length) - 1),
+  );
+  return sorted[index];
+}
+
+function buildTelemetrySummary(
+  cwd: string,
+  discoveredFiles: number,
+  results: TestResult[],
+  elapsedMs: number,
+  parallel: number,
+  retries: number,
+  maxFailures: number,
+): TelemetrySummary {
+  const executedFiles = results.length;
+  const passCount = results.reduce((sum, result) => sum + result.passCount, 0);
+  const failCount = results.reduce((sum, result) => sum + result.failCount, 0);
+  const skipCount = results.reduce((sum, result) => sum + result.skipCount, 0);
+  const failedFiles = results.filter((result) => !result.passed).length;
+  const perFileDurations = results.map((result) => result.duration);
+
+  return {
+    timestamp: new Date().toISOString(),
+    cwd,
+    discoveredFiles,
+    executedFiles,
+    passCount,
+    failCount,
+    skipCount,
+    failedFiles,
+    durationMs: elapsedMs,
+    filesPerSecond:
+      elapsedMs > 0 ? Number(((executedFiles * 1000) / elapsedMs).toFixed(2)) : 0,
+    p50Ms: Number(calculatePercentile(perFileDurations, 0.5).toFixed(2)),
+    p95Ms: Number(calculatePercentile(perFileDurations, 0.95).toFixed(2)),
+    config: {
+      parallel,
+      retries,
+      maxFailures: Number.isFinite(maxFailures) ? maxFailures : -1,
+    },
+  };
+}
+
+function writeTelemetry(logPath: string, payload: TelemetrySummary): void {
+  try {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.appendFileSync(logPath, `${JSON.stringify(payload)}\n`, {
+      encoding: 'utf8',
+    });
+  } catch (error) {
+    console.warn(
+      `\n⚠️  Failed to write telemetry log at ${logPath}: ${String(error)}`,
+    );
+  }
+}
+
 /**
  * Run a single test file in an isolated subprocess
  */
@@ -259,7 +352,8 @@ export async function runTestFile(
     proc.on('close', (code) => {
       clearTimeout(timeoutId);
       const duration = Date.now() - startTime;
-      const { pass, fail, skip } = parseTestOutput(stdout);
+      const combinedOutput = `${stdout}\n${stderr}`.trim();
+      const { pass, fail, skip } = parseTestOutput(combinedOutput);
 
       resolve({
         file,
@@ -268,7 +362,7 @@ export async function runTestFile(
         failCount: fail,
         skipCount: skip,
         duration,
-        output: stdout,
+        output: combinedOutput,
         error: timedOut
           ? 'Test timed out'
           : code !== 0
@@ -302,20 +396,28 @@ async function runParallel(
   files: string[],
   concurrency: number,
   options: IsolatedConfig,
+  maxFailures: number,
 ): Promise<TestResult[]> {
   const results: TestResult[] = [];
   const queue = [...files];
   const total = files.length;
   let completed = 0;
+  let failures = 0;
+  let stopLogged = false;
+
+  const canContinue = (): boolean => failures < maxFailures;
 
   const runNext = async (): Promise<void> => {
-    while (queue.length > 0) {
+    while (queue.length > 0 && canContinue()) {
       const file = queue.shift();
       if (!file) break;
 
       const result = await runTestFile(file, options);
       results.push(result);
       completed++;
+      if (!result.passed) {
+        failures++;
+      }
 
       // Print progress
       const status = result.passed ? '✓' : '✗';
@@ -327,6 +429,13 @@ async function runParallel(
           `${result.passCount} pass, ${result.failCount} fail, ${result.skipCount} skip ` +
           `(${result.duration}ms)`,
       );
+
+      if (!stopLogged && !canContinue()) {
+        stopLogged = true;
+        console.log(
+          `\n🛑 Reached max failures (${maxFailures}). Stopping new test scheduling.`,
+        );
+      }
     }
   };
 
@@ -350,9 +459,22 @@ export async function runIsolated(
   const {
     parallel = getOptimalParallelCount(),
     retries = 0,
+    bail = false,
+    maxFailures,
+    telemetryEnabled = true,
+    telemetryLogPath = DEFAULT_TELEMETRY_LOG_PATH,
     cwd = process.cwd(),
     preloadPath = findPreloadPath(cwd),
   } = options;
+  const safeMaxFailures = Number.isFinite(maxFailures || NaN)
+    ? Math.max(1, maxFailures as number)
+    : Number.POSITIVE_INFINITY;
+  const resolvedMaxFailures = bail
+    ? 1
+    : safeMaxFailures;
+  const resolvedTelemetryPath = path.isAbsolute(telemetryLogPath)
+    ? telemetryLogPath
+    : path.join(cwd, telemetryLogPath);
 
   const startTime = Date.now();
 
@@ -365,7 +487,12 @@ export async function runIsolated(
   console.log('─'.repeat(60));
 
   const resolvedOptions = { ...options, parallel, preloadPath, cwd };
-  let results = await runParallel(files, parallel, resolvedOptions);
+  let results = await runParallel(
+    files,
+    parallel,
+    resolvedOptions,
+    resolvedMaxFailures,
+  );
 
   // Retry failed tests
   if (retries > 0) {
@@ -376,6 +503,7 @@ export async function runIsolated(
         failed.map((r) => r.file),
         parallel,
         resolvedOptions,
+        Number.POSITIVE_INFINITY,
       );
 
       // Replace results for retried tests
@@ -391,6 +519,20 @@ export async function runIsolated(
   const totalFail = results.reduce((sum, r) => sum + r.failCount, 0);
   const totalSkip = results.reduce((sum, r) => sum + r.skipCount, 0);
   const filesWithFailures = results.filter((r) => !r.passed).length;
+  const stoppedEarly = results.length < files.length;
+  const elapsedMs = Date.now() - startTime;
+  const telemetry = buildTelemetrySummary(
+    cwd,
+    files.length,
+    results,
+    elapsedMs,
+    parallel,
+    retries,
+    resolvedMaxFailures,
+  );
+  if (telemetryEnabled) {
+    writeTelemetry(resolvedTelemetryPath, telemetry);
+  }
 
   console.log('\n' + '─'.repeat(60));
   console.log('FINAL TOTALS:');
@@ -402,7 +544,13 @@ export async function runIsolated(
   if (totalSkip > 0) {
     console.log(`\x1b[33m⊘ ${totalSkip} skip\x1b[0m`);
   }
-  console.log(`Duration: ${Date.now() - startTime}ms`);
+  console.log(`Duration: ${elapsedMs}ms`);
+  console.log(`p50: ${telemetry.p50Ms}ms`);
+  console.log(`p95: ${telemetry.p95Ms}ms`);
+  console.log(`files/sec: ${telemetry.filesPerSecond}`);
+  if (telemetryEnabled) {
+    console.log(`telemetry: ${resolvedTelemetryPath}`);
+  }
   console.log('─'.repeat(60));
 
   if (filesWithFailures > 0) {
@@ -410,14 +558,20 @@ export async function runIsolated(
   } else {
     console.log('\n✅ All tests passed');
   }
+  if (stoppedEarly) {
+    console.log(
+      `⏭️  Stopped early after ${results.length}/${files.length} files.`,
+    );
+  }
 
   return {
     passed: totalPass,
     failed: totalFail,
     skipped: totalSkip,
     totalTests: totalPass + totalFail + totalSkip,
-    duration: Date.now() - startTime,
+    duration: elapsedMs,
     results,
+    stoppedEarly,
   };
 }
 

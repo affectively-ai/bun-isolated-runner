@@ -29,6 +29,10 @@ Options:
   --parallel=N           Number of parallel workers (default: ${getOptimalParallelCount()})
   --timeout=N            Per-test timeout in ms (default: 30000)
   --retries=N            Retry failed tests N times (default: 0)
+  --bail                 Stop scheduling after first failed file
+  --max-failures=N       Stop scheduling after N failed files
+  --telemetry-log=<path> Write JSONL telemetry (default: .build-logs/bun-isolated-runner.jsonl)
+  --no-telemetry         Disable telemetry logging
   --verbose, -v          Verbose output
   --cwd=<dir>            Working directory
   --help, -h             Show this help
@@ -39,6 +43,8 @@ Examples:
   bun-isolated src/**/*.test.ts         Run matching tests
   bun-isolated --files a.test.ts b.test.ts
   bun-isolated --parallel=4             Limit parallelism
+  bun-isolated --bail                   Fail fast after first failed file
+  bun-isolated --telemetry-log=.build-logs/isolated.jsonl
 
 Environment Variables:
   JOBS=N                 Override parallel count
@@ -60,6 +66,10 @@ async function main(): Promise<void> {
   let timeout =
     parseInt(process.env['BUN_ISOLATED_TIMEOUT'] || '', 10) || 30000;
   let retries = 0;
+  let bail = false;
+  let maxFailures: number | undefined;
+  let telemetryEnabled = true;
+  let telemetryLogPath: string | undefined;
   let verbose = false;
   let cwd = process.cwd();
 
@@ -86,10 +96,38 @@ async function main(): Promise<void> {
       break;
     } else if (arg.startsWith('--parallel=')) {
       parallel = parseInt(arg.split('=')[1], 10);
+    } else if (arg === '--parallel' || arg === '--workers') {
+      if (i + 1 < args.length) {
+        parallel = parseInt(args[++i], 10);
+      }
     } else if (arg.startsWith('--timeout=')) {
       timeout = parseInt(arg.split('=')[1], 10);
+    } else if (arg === '--timeout') {
+      if (i + 1 < args.length) {
+        timeout = parseInt(args[++i], 10);
+      }
     } else if (arg.startsWith('--retries=')) {
       retries = parseInt(arg.split('=')[1], 10);
+    } else if (arg === '--retries') {
+      if (i + 1 < args.length) {
+        retries = parseInt(args[++i], 10);
+      }
+    } else if (arg === '--bail') {
+      bail = true;
+    } else if (arg.startsWith('--max-failures=')) {
+      maxFailures = parseInt(arg.split('=')[1], 10);
+    } else if (arg === '--max-failures') {
+      if (i + 1 < args.length) {
+        maxFailures = parseInt(args[++i], 10);
+      }
+    } else if (arg.startsWith('--telemetry-log=')) {
+      telemetryLogPath = arg.split('=')[1];
+    } else if (arg === '--telemetry-log') {
+      if (i + 1 < args.length) {
+        telemetryLogPath = args[++i];
+      }
+    } else if (arg === '--no-telemetry') {
+      telemetryEnabled = false;
     } else if (arg === '--verbose' || arg === '-v') {
       verbose = true;
     } else if (arg.startsWith('--cwd=')) {
@@ -147,6 +185,10 @@ async function main(): Promise<void> {
     parallel,
     timeout,
     retries,
+    bail,
+    maxFailures,
+    telemetryEnabled,
+    telemetryLogPath,
     verbose,
     cwd,
     ...(preloadPath && { preloadPath }),

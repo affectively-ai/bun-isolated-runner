@@ -136,7 +136,7 @@ export async function findTestFiles(
     '**/*.spec.ts',
     '**/*.spec.tsx',
   ],
-  options: { exclude?: string[]; cwd?: string } = {},
+  options: { exclude?: string[]; cwd?: string } = {}
 ): Promise<string[]> {
   const {
     exclude = ['**/node_modules/**', '**/dist/**', '**/build/**'],
@@ -157,7 +157,7 @@ export async function findTestFiles(
         const isExcluded = exclude.some((pattern) => {
           if (pattern.includes('*')) {
             return relativePath.includes(
-              pattern.replace(/\*\*/g, '').replace(/\*/g, ''),
+              pattern.replace(/\*\*/g, '').replace(/\*/g, '')
             );
           }
           return relativePath.includes(pattern);
@@ -195,7 +195,7 @@ export async function findTestFiles(
  * Find bun.preload.ts in common locations
  */
 export function findPreloadPath(
-  cwd: string = process.cwd(),
+  cwd: string = process.cwd()
 ): string | undefined {
   const candidates = [
     path.join(cwd, 'bun.preload.ts'),
@@ -276,7 +276,7 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 
 function loadStickyPassCache(
   cachePath: string,
-  reset: boolean,
+  reset: boolean
 ): StickyPassCachePayload {
   if (reset && fs.existsSync(cachePath)) {
     try {
@@ -284,7 +284,9 @@ function loadStickyPassCache(
       console.log(`\n🔁 Reset sticky-pass cache at ${cachePath}`);
     } catch (error) {
       console.warn(
-        `\n⚠️  Failed to reset sticky-pass cache at ${cachePath}: ${String(error)}`,
+        `\n⚠️  Failed to reset sticky-pass cache at ${cachePath}: ${String(
+          error
+        )}`
       );
     }
   }
@@ -332,7 +334,7 @@ function loadStickyPassCache(
     return loaded;
   } catch (error) {
     console.warn(
-      `\n⚠️  Failed to read sticky-pass cache at ${cachePath}: ${String(error)}`,
+      `\n⚠️  Failed to read sticky-pass cache at ${cachePath}: ${String(error)}`
     );
     return emptyStickyPassCache();
   }
@@ -340,7 +342,7 @@ function loadStickyPassCache(
 
 function writeStickyPassCache(
   cachePath: string,
-  payload: StickyPassCachePayload,
+  payload: StickyPassCachePayload
 ): void {
   payload.updatedAt = new Date().toISOString();
   try {
@@ -348,7 +350,9 @@ function writeStickyPassCache(
     fs.writeFileSync(cachePath, JSON.stringify(payload), { encoding: 'utf8' });
   } catch (error) {
     console.warn(
-      `\n⚠️  Failed to write sticky-pass cache at ${cachePath}: ${String(error)}`,
+      `\n⚠️  Failed to write sticky-pass cache at ${cachePath}: ${String(
+        error
+      )}`
     );
   }
 }
@@ -363,14 +367,14 @@ function buildStickyRunSalt(options: {
       `bun=${process.versions['bun'] || process.version}`,
       `preload=${hashFileIfExists(options.preloadPath)}`,
       `timeout=${options.timeout}`,
-    ].join('|'),
+    ].join('|')
   );
 }
 
 function buildStickyFingerprint(
   file: string,
   cwd: string,
-  runSalt: string,
+  runSalt: string
 ): string | null {
   const absolutePath = path.isAbsolute(file) ? file : path.join(cwd, file);
   try {
@@ -387,7 +391,7 @@ function calculatePercentile(values: number[], percentile: number): number {
   const clamped = Math.max(0, Math.min(1, percentile));
   const index = Math.max(
     0,
-    Math.min(sorted.length - 1, Math.ceil(clamped * sorted.length) - 1),
+    Math.min(sorted.length - 1, Math.ceil(clamped * sorted.length) - 1)
   );
   return sorted[index];
 }
@@ -400,7 +404,7 @@ function buildTelemetrySummary(
   parallel: number,
   retries: number,
   maxFailures: number,
-  stickyPassEnabled: boolean,
+  stickyPassEnabled: boolean
 ): TelemetrySummary {
   const executedFiles = results.filter((result) => !result.cached).length;
   const stickyHits = results.length - executedFiles;
@@ -424,7 +428,9 @@ function buildTelemetrySummary(
     failedFiles,
     durationMs: elapsedMs,
     filesPerSecond:
-      elapsedMs > 0 ? Number(((executedFiles * 1000) / elapsedMs).toFixed(2)) : 0,
+      elapsedMs > 0
+        ? Number(((executedFiles * 1000) / elapsedMs).toFixed(2))
+        : 0,
     p50Ms: Number(calculatePercentile(perFileDurations, 0.5).toFixed(2)),
     p95Ms: Number(calculatePercentile(perFileDurations, 0.95).toFixed(2)),
     config: {
@@ -444,7 +450,7 @@ function writeTelemetry(logPath: string, payload: TelemetrySummary): void {
     });
   } catch (error) {
     console.warn(
-      `\n⚠️  Failed to write telemetry log at ${logPath}: ${String(error)}`,
+      `\n⚠️  Failed to write telemetry log at ${logPath}: ${String(error)}`
     );
   }
 }
@@ -454,7 +460,7 @@ function writeTelemetry(logPath: string, payload: TelemetrySummary): void {
  */
 export async function runTestFile(
   file: string,
-  options: IsolatedConfig = {},
+  options: IsolatedConfig = {}
 ): Promise<TestResult> {
   const {
     timeout = 30000,
@@ -534,8 +540,8 @@ export async function runTestFile(
         error: timedOut
           ? 'Test timed out'
           : code !== 0
-            ? stderr || `Exit code: ${code}`
-            : undefined,
+          ? stderr || `Exit code: ${code}`
+          : undefined,
       });
     });
 
@@ -564,7 +570,7 @@ async function runParallel(
   files: string[],
   concurrency: number,
   options: IsolatedConfig,
-  maxFailures: number,
+  maxFailures: number
 ): Promise<TestResult[]> {
   const results: TestResult[] = [];
   const queue = [...files];
@@ -595,13 +601,13 @@ async function runParallel(
       console.log(
         `[${completed}/${total}] ${color}${status}${reset} ${result.file}: ` +
           `${result.passCount} pass, ${result.failCount} fail, ${result.skipCount} skip ` +
-          `(${result.duration}ms)`,
+          `(${result.duration}ms)`
       );
 
       if (!stopLogged && !canContinue()) {
         stopLogged = true;
         console.log(
-          `\n🛑 Reached max failures (${maxFailures}). Stopping new test scheduling.`,
+          `\n🛑 Reached max failures (${maxFailures}). Stopping new test scheduling.`
         );
       }
     }
@@ -622,11 +628,10 @@ async function runParallel(
  */
 export async function runIsolated(
   files: string[],
-  options: IsolatedConfig = {},
+  options: IsolatedConfig = {}
 ): Promise<RunResults> {
   const stickyEnvValue = process.env['BUN_ISOLATED_STICKY'];
-  const stickyEnvEnabled =
-    stickyEnvValue === '1' || stickyEnvValue === 'true';
+  const stickyEnvEnabled = stickyEnvValue === '1' || stickyEnvValue === 'true';
   const {
     parallel = getOptimalParallelCount(),
     retries = 0,
@@ -644,9 +649,7 @@ export async function runIsolated(
   const safeMaxFailures = Number.isFinite(maxFailures || NaN)
     ? Math.max(1, maxFailures as number)
     : Number.POSITIVE_INFINITY;
-  const resolvedMaxFailures = bail
-    ? 1
-    : safeMaxFailures;
+  const resolvedMaxFailures = bail ? 1 : safeMaxFailures;
   const resolvedTelemetryPath = path.isAbsolute(telemetryLogPath)
     ? telemetryLogPath
     : path.join(cwd, telemetryLogPath);
@@ -660,7 +663,7 @@ export async function runIsolated(
   console.log(
     `   Workers: ${parallel} | Platform: ${process.platform} | Preload: ${
       preloadPath ? 'yes' : 'no'
-    }\n`,
+    }\n`
   );
   console.log('─'.repeat(60));
   if (stickyPassEnabled) {
@@ -714,7 +717,7 @@ export async function runIsolated(
 
     if (stickyCachedResults.length > 0) {
       console.log(
-        `sticky-pass hits: ${stickyCachedResults.length}/${files.length}`,
+        `sticky-pass hits: ${stickyCachedResults.length}/${files.length}`
       );
     }
   } else {
@@ -725,7 +728,7 @@ export async function runIsolated(
     runnableFiles,
     parallel,
     resolvedOptions,
-    resolvedMaxFailures,
+    resolvedMaxFailures
   );
 
   // Retry failed tests
@@ -737,7 +740,7 @@ export async function runIsolated(
         failed.map((r) => r.file),
         parallel,
         resolvedOptions,
-        Number.POSITIVE_INFINITY,
+        Number.POSITIVE_INFINITY
       );
 
       // Replace results for retried tests
@@ -785,7 +788,7 @@ export async function runIsolated(
     parallel,
     retries,
     resolvedMaxFailures,
-    stickyPassEnabled,
+    stickyPassEnabled
   );
   if (telemetryEnabled) {
     writeTelemetry(resolvedTelemetryPath, telemetry);
@@ -820,7 +823,7 @@ export async function runIsolated(
   }
   if (stoppedEarly) {
     console.log(
-      `⏭️  Stopped early after ${results.length}/${files.length} files.`,
+      `⏭️  Stopped early after ${results.length}/${files.length} files.`
     );
   }
 

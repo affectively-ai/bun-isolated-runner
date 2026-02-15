@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
@@ -23,7 +29,7 @@ function writePassingTestFile(cwd: string, fileName: string): void {
         expect(1).toBe(1);
       });
     `,
-    { encoding: 'utf8' },
+    { encoding: 'utf8' }
   );
 }
 
@@ -37,7 +43,7 @@ function writeFailingTestFile(cwd: string, fileName: string): void {
         expect(1).toBe(2);
       });
     `,
-    { encoding: 'utf8' },
+    { encoding: 'utf8' }
   );
 }
 

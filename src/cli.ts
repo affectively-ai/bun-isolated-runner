@@ -77,8 +77,7 @@ async function main(): Promise<void> {
   let telemetryEnabled = true;
   let telemetryLogPath: string | undefined;
   const stickyEnvValue = process.env['BUN_ISOLATED_STICKY'];
-  let stickyPassEnabled =
-    stickyEnvValue === '1' || stickyEnvValue === 'true';
+  let stickyPassEnabled = stickyEnvValue === '1' || stickyEnvValue === 'true';
   let stickyPassCachePath: string | undefined;
   let stickyPassReset = false;
   let verbose = false;

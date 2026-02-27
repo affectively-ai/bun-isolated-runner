@@ -13,6 +13,261 @@ import {
   getOptimalParallelCount,
   type IsolatedConfig,
 } from './index.js';
+import { parseTestPathPatternFlag } from './test-path-patterns.js';
+
+type CliMode = 'all' | 'changed' | 'files';
+
+interface ParsedCliArgs {
+  help: boolean;
+  patterns: string[];
+  excludePatterns: string[];
+  preloadPath?: string;
+  mode: CliMode;
+  specificFiles: string[];
+  testPathPatterns: string[];
+  parallel: number;
+  timeout: number;
+  retries: number;
+  bail: boolean;
+  maxFailures?: number;
+  telemetryEnabled: boolean;
+  telemetryLogPath?: string;
+  stickyPassEnabled: boolean;
+  stickyPassCachePath?: string;
+  stickyPassReset: boolean;
+  verbose: boolean;
+  cwd: string;
+}
+
+function parseNumberWithFallback(
+  current: number,
+  rawValue: string | undefined
+): number {
+  if (!rawValue) return current;
+  const parsed = parseInt(rawValue, 10);
+  return Number.isFinite(parsed) ? parsed : current;
+}
+
+function parseOptionalNumberWithFallback(
+  current: number | undefined,
+  rawValue: string | undefined
+): number | undefined {
+  if (!rawValue) return current;
+  const parsed = parseInt(rawValue, 10);
+  return Number.isFinite(parsed) ? parsed : current;
+}
+
+function isExplicitTestFileArg(arg: string): boolean {
+  return (
+    arg.endsWith('.test.ts') ||
+    arg.endsWith('.test.tsx') ||
+    arg.endsWith('.spec.ts') ||
+    arg.endsWith('.spec.tsx')
+  );
+}
+
+export function parseCliArgs(
+  args: string[],
+  env: Record<string, string | undefined> = process.env,
+  defaultCwd: string = process.cwd()
+): ParsedCliArgs {
+  const stickyEnvValue = env['BUN_ISOLATED_STICKY'];
+  const parsed: ParsedCliArgs = {
+    help: false,
+    patterns: [],
+    excludePatterns: [],
+    mode: 'all',
+    specificFiles: [],
+    testPathPatterns: [],
+    parallel: parseNumberWithFallback(
+      getOptimalParallelCount(),
+      env['JOBS']
+    ),
+    timeout: parseNumberWithFallback(30000, env['BUN_ISOLATED_TIMEOUT']),
+    retries: 0,
+    bail: false,
+    telemetryEnabled: true,
+    stickyPassEnabled: stickyEnvValue === '1' || stickyEnvValue === 'true',
+    stickyPassReset: false,
+    verbose: false,
+    cwd: defaultCwd,
+  };
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    if (arg === '--help' || arg === '-h') {
+      parsed.help = true;
+      continue;
+    }
+
+    if (arg === '--changed') {
+      parsed.mode = 'changed';
+      continue;
+    }
+
+    if (arg === '--preload') {
+      if (i + 1 < args.length) {
+        parsed.preloadPath = args[++i];
+      }
+      continue;
+    }
+
+    if (arg === '--exclude') {
+      if (i + 1 < args.length) {
+        parsed.excludePatterns.push(args[++i]);
+      }
+      continue;
+    }
+
+    const parsedTestPathPatternFlag = parseTestPathPatternFlag(args, i);
+    if (parsedTestPathPatternFlag) {
+      parsed.testPathPatterns.push(...parsedTestPathPatternFlag.patterns);
+      i += parsedTestPathPatternFlag.consumedArgs - 1;
+      continue;
+    }
+
+    if (arg === '--files') {
+      parsed.mode = 'files';
+      parsed.specificFiles = args.slice(i + 1).filter((a) => !a.startsWith('-'));
+      break;
+    }
+
+    if (arg.startsWith('--parallel=')) {
+      parsed.parallel = parseNumberWithFallback(
+        parsed.parallel,
+        arg.split('=').slice(1).join('=')
+      );
+      continue;
+    }
+
+    if (arg === '--parallel' || arg === '--workers') {
+      parsed.parallel = parseNumberWithFallback(parsed.parallel, args[i + 1]);
+      i++;
+      continue;
+    }
+
+    if (arg.startsWith('--timeout=')) {
+      parsed.timeout = parseNumberWithFallback(
+        parsed.timeout,
+        arg.split('=').slice(1).join('=')
+      );
+      continue;
+    }
+
+    if (arg === '--timeout') {
+      parsed.timeout = parseNumberWithFallback(parsed.timeout, args[i + 1]);
+      i++;
+      continue;
+    }
+
+    if (arg.startsWith('--retries=')) {
+      parsed.retries = parseNumberWithFallback(
+        parsed.retries,
+        arg.split('=').slice(1).join('=')
+      );
+      continue;
+    }
+
+    if (arg === '--retries') {
+      parsed.retries = parseNumberWithFallback(parsed.retries, args[i + 1]);
+      i++;
+      continue;
+    }
+
+    if (arg === '--bail') {
+      parsed.bail = true;
+      continue;
+    }
+
+    if (arg.startsWith('--max-failures=')) {
+      parsed.maxFailures = parseOptionalNumberWithFallback(
+        parsed.maxFailures,
+        arg.split('=').slice(1).join('=')
+      );
+      continue;
+    }
+
+    if (arg === '--max-failures') {
+      parsed.maxFailures = parseOptionalNumberWithFallback(
+        parsed.maxFailures,
+        args[i + 1]
+      );
+      i++;
+      continue;
+    }
+
+    if (arg.startsWith('--telemetry-log=')) {
+      parsed.telemetryLogPath = arg.split('=').slice(1).join('=');
+      continue;
+    }
+
+    if (arg === '--telemetry-log') {
+      if (i + 1 < args.length) {
+        parsed.telemetryLogPath = args[++i];
+      }
+      continue;
+    }
+
+    if (arg === '--no-telemetry') {
+      parsed.telemetryEnabled = false;
+      continue;
+    }
+
+    if (arg === '--sticky-pass') {
+      parsed.stickyPassEnabled = true;
+      continue;
+    }
+
+    if (arg === '--no-sticky-pass') {
+      parsed.stickyPassEnabled = false;
+      continue;
+    }
+
+    if (arg === '--sticky-pass-reset') {
+      parsed.stickyPassEnabled = true;
+      parsed.stickyPassReset = true;
+      continue;
+    }
+
+    if (arg.startsWith('--sticky-pass-file=')) {
+      parsed.stickyPassCachePath = arg.split('=').slice(1).join('=');
+      continue;
+    }
+
+    if (arg === '--sticky-pass-file') {
+      if (i + 1 < args.length) {
+        parsed.stickyPassCachePath = args[++i];
+      }
+      continue;
+    }
+
+    if (arg === '--verbose' || arg === '-v') {
+      parsed.verbose = true;
+      continue;
+    }
+
+    if (arg.startsWith('--cwd=')) {
+      const parsedCwd = arg.split('=').slice(1).join('=');
+      if (parsedCwd.length > 0) {
+        parsed.cwd = parsedCwd;
+      }
+      continue;
+    }
+
+    if (isExplicitTestFileArg(arg)) {
+      parsed.mode = 'files';
+      parsed.specificFiles.push(arg);
+      continue;
+    }
+
+    if (!arg.startsWith('-')) {
+      parsed.patterns.push(arg);
+    }
+  }
+
+  return parsed;
+}
 
 function printHelp(): void {
   console.log(`
@@ -26,6 +281,7 @@ Options:
   --files <files...>     Run specific test files
   --preload <path>       Preload script (e.g. bun.preload.ts); overrides auto-detect
   --exclude <pattern>    Exclude paths containing this (repeatable)
+  --testPathPattern=<p>  Only run files whose path matches expression (repeatable)
   --parallel=N           Number of parallel workers (default: ${getOptimalParallelCount()})
   --timeout=N            Per-test timeout in ms (default: 30000)
   --retries=N            Retry failed tests N times (default: 0)
@@ -46,6 +302,7 @@ Examples:
   bun-isolated --changed                Run changed tests only
   bun-isolated src/**/*.test.ts         Run matching tests
   bun-isolated --files a.test.ts b.test.ts
+  bun-isolated --testPathPattern=shared-ui/services
   bun-isolated --parallel=4             Limit parallelism
   bun-isolated --bail                   Fail fast after first failed file
   bun-isolated --sticky-pass            Enable sticky pass caching
@@ -59,143 +316,42 @@ Environment Variables:
 }
 
 async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-
-  // Parse arguments
-  const patterns: string[] = [];
-  const excludePatterns: string[] = [];
-  let preloadPath: string | undefined;
-  let mode: 'all' | 'changed' | 'files' = 'all';
-  let specificFiles: string[] = [];
-  let parallel =
-    parseInt(process.env['JOBS'] || '', 10) || getOptimalParallelCount();
-  let timeout =
-    parseInt(process.env['BUN_ISOLATED_TIMEOUT'] || '', 10) || 30000;
-  let retries = 0;
-  let bail = false;
-  let maxFailures: number | undefined;
-  let telemetryEnabled = true;
-  let telemetryLogPath: string | undefined;
-  const stickyEnvValue = process.env['BUN_ISOLATED_STICKY'];
-  let stickyPassEnabled = stickyEnvValue === '1' || stickyEnvValue === 'true';
-  let stickyPassCachePath: string | undefined;
-  let stickyPassReset = false;
-  let verbose = false;
-  let cwd = process.cwd();
-
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-
-    if (arg === '--help' || arg === '-h') {
-      printHelp();
-      process.exit(0);
-    } else if (arg === '--changed') {
-      mode = 'changed';
-    } else if (arg === '--preload') {
-      if (i + 1 < args.length) {
-        preloadPath = args[++i];
-      }
-    } else if (arg === '--exclude') {
-      if (i + 1 < args.length) {
-        excludePatterns.push(args[++i]);
-      }
-    } else if (arg === '--files') {
-      mode = 'files';
-      // Collect remaining args as files
-      specificFiles = args.slice(i + 1).filter((a) => !a.startsWith('-'));
-      break;
-    } else if (arg.startsWith('--parallel=')) {
-      parallel = parseInt(arg.split('=')[1], 10);
-    } else if (arg === '--parallel' || arg === '--workers') {
-      if (i + 1 < args.length) {
-        parallel = parseInt(args[++i], 10);
-      }
-    } else if (arg.startsWith('--timeout=')) {
-      timeout = parseInt(arg.split('=')[1], 10);
-    } else if (arg === '--timeout') {
-      if (i + 1 < args.length) {
-        timeout = parseInt(args[++i], 10);
-      }
-    } else if (arg.startsWith('--retries=')) {
-      retries = parseInt(arg.split('=')[1], 10);
-    } else if (arg === '--retries') {
-      if (i + 1 < args.length) {
-        retries = parseInt(args[++i], 10);
-      }
-    } else if (arg === '--bail') {
-      bail = true;
-    } else if (arg.startsWith('--max-failures=')) {
-      maxFailures = parseInt(arg.split('=')[1], 10);
-    } else if (arg === '--max-failures') {
-      if (i + 1 < args.length) {
-        maxFailures = parseInt(args[++i], 10);
-      }
-    } else if (arg.startsWith('--telemetry-log=')) {
-      telemetryLogPath = arg.split('=')[1];
-    } else if (arg === '--telemetry-log') {
-      if (i + 1 < args.length) {
-        telemetryLogPath = args[++i];
-      }
-    } else if (arg === '--no-telemetry') {
-      telemetryEnabled = false;
-    } else if (arg === '--sticky-pass') {
-      stickyPassEnabled = true;
-    } else if (arg === '--no-sticky-pass') {
-      stickyPassEnabled = false;
-    } else if (arg === '--sticky-pass-reset') {
-      stickyPassEnabled = true;
-      stickyPassReset = true;
-    } else if (arg.startsWith('--sticky-pass-file=')) {
-      stickyPassCachePath = arg.split('=')[1];
-    } else if (arg === '--sticky-pass-file') {
-      if (i + 1 < args.length) {
-        stickyPassCachePath = args[++i];
-      }
-    } else if (arg === '--verbose' || arg === '-v') {
-      verbose = true;
-    } else if (arg.startsWith('--cwd=')) {
-      cwd = arg.split('=')[1];
-    } else if (
-      arg.endsWith('.test.ts') ||
-      arg.endsWith('.test.tsx') ||
-      arg.endsWith('.spec.ts') ||
-      arg.endsWith('.spec.tsx')
-    ) {
-      // Specific test file passed
-      mode = 'files';
-      specificFiles.push(arg);
-    } else if (!arg.startsWith('-')) {
-      patterns.push(arg);
-    }
+  const parsed = parseCliArgs(process.argv.slice(2));
+  if (parsed.help) {
+    printHelp();
+    process.exit(0);
   }
 
   // Determine files to run
   let files: string[];
 
-  if (mode === 'changed') {
+  if (parsed.mode === 'changed') {
     console.log('🔍 Finding changed test files...');
-    files = findChangedTestFiles(cwd);
+    files = findChangedTestFiles(parsed.cwd);
     if (files.length === 0) {
       console.log('No changed test files found.');
       process.exit(0);
     }
-  } else if (mode === 'files' && specificFiles.length > 0) {
-    files = specificFiles;
+  } else if (parsed.mode === 'files' && parsed.specificFiles.length > 0) {
+    files = parsed.specificFiles;
   } else {
     console.log('🔍 Finding test files...');
     const exclude =
-      excludePatterns.length > 0
+      parsed.excludePatterns.length > 0
         ? [
             '**/node_modules/**',
             '**/dist/**',
             '**/build/**',
-            ...excludePatterns,
+            ...parsed.excludePatterns,
           ]
         : undefined;
-    files = await findTestFiles(patterns.length > 0 ? patterns : undefined, {
-      cwd,
-      exclude,
-    });
+    files = await findTestFiles(
+      parsed.patterns.length > 0 ? parsed.patterns : undefined,
+      {
+        cwd: parsed.cwd,
+        exclude,
+      }
+    );
   }
 
   if (files.length === 0) {
@@ -205,19 +361,20 @@ async function main(): Promise<void> {
 
   // Run tests
   const config: IsolatedConfig = {
-    parallel,
-    timeout,
-    retries,
-    bail,
-    maxFailures,
-    telemetryEnabled,
-    telemetryLogPath,
-    stickyPassEnabled,
-    stickyPassCachePath,
-    stickyPassReset,
-    verbose,
-    cwd,
-    ...(preloadPath && { preloadPath }),
+    parallel: parsed.parallel,
+    timeout: parsed.timeout,
+    retries: parsed.retries,
+    bail: parsed.bail,
+    maxFailures: parsed.maxFailures,
+    telemetryEnabled: parsed.telemetryEnabled,
+    telemetryLogPath: parsed.telemetryLogPath,
+    stickyPassEnabled: parsed.stickyPassEnabled,
+    stickyPassCachePath: parsed.stickyPassCachePath,
+    stickyPassReset: parsed.stickyPassReset,
+    testPathPatterns: parsed.testPathPatterns,
+    verbose: parsed.verbose,
+    cwd: parsed.cwd,
+    ...(parsed.preloadPath && { preloadPath: parsed.preloadPath }),
   };
 
   const results = await runIsolated(files, config);
@@ -226,7 +383,11 @@ async function main(): Promise<void> {
   process.exit(results.failed > 0 ? 1 : 0);
 }
 
-main().catch((err) => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((err) => {
+    console.error('Fatal error:', err);
+    process.exit(1);
+  });
+}
+
+export { main, printHelp };

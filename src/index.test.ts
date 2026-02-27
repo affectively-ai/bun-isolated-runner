@@ -9,7 +9,11 @@ import {
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-import { getOptimalParallelCount, runIsolated } from './index';
+import {
+  filterTestsByPathPattern,
+  getOptimalParallelCount,
+  runIsolated,
+} from './index';
 
 const tempDirs: string[] = [];
 
@@ -144,5 +148,44 @@ describe('bun-isolated-runner', () => {
     expect(second.results.length).toBe(1);
     expect(second.results[0]?.cached).toBeTrue();
     expect(existsSync(stickyPath)).toBeTrue();
+  });
+
+  it('filters file paths with substring and regex testPathPatterns', () => {
+    const files = [
+      'shared-ui/src/services/authService.test.ts',
+      'shared-ui/src/hooks/useTranslation.test.ts',
+      'shared-utils/src/logger.test.ts',
+    ];
+
+    const filtered = filterTestsByPathPattern(files, [
+      'shared-ui/src/services',
+      '^shared-utils/src/.*\\.test\\.ts$',
+    ]);
+
+    expect(filtered).toEqual([
+      'shared-ui/src/services/authService.test.ts',
+      'shared-utils/src/logger.test.ts',
+    ]);
+  });
+
+  it('applies testPathPatterns during isolated execution', async () => {
+    const cwd = createTempDir();
+    writePassingTestFile(cwd, 'service-pass.test.ts');
+    writeFailingTestFile(cwd, 'hook-fail.test.ts');
+
+    const results = await runIsolated(
+      ['service-pass.test.ts', 'hook-fail.test.ts'],
+      {
+        cwd,
+        parallel: 1,
+        telemetryEnabled: false,
+        timeout: 20_000,
+        testPathPatterns: ['service-pass'],
+      }
+    );
+
+    expect(results.failed).toBe(0);
+    expect(results.results.length).toBe(1);
+    expect(results.results[0]?.file).toBe('service-pass.test.ts');
   });
 });

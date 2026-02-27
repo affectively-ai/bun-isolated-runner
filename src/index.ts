@@ -12,6 +12,7 @@ import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { filterTestsByPathPattern } from './test-path-patterns';
 
 // ============================================================================
 // Types
@@ -22,6 +23,8 @@ export interface IsolatedConfig {
   include?: string[];
   /** Patterns to exclude */
   exclude?: string[];
+  /** Only run files that match these path expressions (substring or RegExp) */
+  testPathPatterns?: string[];
   /** Number of parallel workers (default: CPU count / 2, max 4) */
   parallel?: number;
   /** Per-test timeout in ms (default: 30000) */
@@ -642,10 +645,12 @@ export async function runIsolated(
     stickyPassEnabled = stickyEnvEnabled,
     stickyPassCachePath = DEFAULT_STICKY_PASS_CACHE_PATH,
     stickyPassReset = false,
+    testPathPatterns = [],
     cwd = process.cwd(),
     preloadPath = findPreloadPath(cwd),
     timeout = 30000,
   } = options;
+  const filteredFiles = filterTestsByPathPattern(files, testPathPatterns);
   const safeMaxFailures = Number.isFinite(maxFailures || NaN)
     ? Math.max(1, maxFailures as number)
     : Number.POSITIVE_INFINITY;
@@ -659,7 +664,7 @@ export async function runIsolated(
 
   const startTime = Date.now();
 
-  console.log(`\n🧪 Running ${files.length} test files in isolation`);
+  console.log(`\n🧪 Running ${filteredFiles.length} test files in isolation`);
   console.log(
     `   Workers: ${parallel} | Platform: ${process.platform} | Preload: ${
       preloadPath ? 'yes' : 'no'
@@ -668,6 +673,9 @@ export async function runIsolated(
   console.log('─'.repeat(60));
   if (stickyPassEnabled) {
     console.log(`sticky-pass cache: ${resolvedStickyPassPath}`);
+  }
+  if (testPathPatterns.length > 0) {
+    console.log(`testPathPatterns: ${testPathPatterns.join(', ')}`);
   }
 
   const resolvedOptions = {
@@ -690,7 +698,7 @@ export async function runIsolated(
       preloadPath,
       timeout,
     });
-    for (const file of files) {
+    for (const file of filteredFiles) {
       const fingerprint = buildStickyFingerprint(file, cwd, runSalt);
       if (!fingerprint) {
         runnableFiles.push(file);
@@ -717,14 +725,14 @@ export async function runIsolated(
 
     if (stickyCachedResults.length > 0) {
       console.log(
-        `sticky-pass hits: ${stickyCachedResults.length}/${files.length}`
+        `sticky-pass hits: ${stickyCachedResults.length}/${filteredFiles.length}`
       );
     }
   } else {
-    runnableFiles.push(...files);
+    runnableFiles.push(...filteredFiles);
   }
 
-  let runResults = await runParallel(
+  const runResults = await runParallel(
     runnableFiles,
     parallel,
     resolvedOptions,
@@ -778,11 +786,11 @@ export async function runIsolated(
   const totalFail = results.reduce((sum, r) => sum + r.failCount, 0);
   const totalSkip = results.reduce((sum, r) => sum + r.skipCount, 0);
   const filesWithFailures = results.filter((r) => !r.passed).length;
-  const stoppedEarly = results.length < files.length;
+  const stoppedEarly = results.length < filteredFiles.length;
   const elapsedMs = Date.now() - startTime;
   const telemetry = buildTelemetrySummary(
     cwd,
-    files.length,
+    filteredFiles.length,
     results,
     elapsedMs,
     parallel,
@@ -823,7 +831,7 @@ export async function runIsolated(
   }
   if (stoppedEarly) {
     console.log(
-      `⏭️  Stopped early after ${results.length}/${files.length} files.`
+      `⏭️  Stopped early after ${results.length}/${filteredFiles.length} files.`
     );
   }
 
@@ -863,6 +871,7 @@ export function findChangedTestFiles(cwd: string = process.cwd()): string[] {
 // ============================================================================
 
 export default {
+  filterTestsByPathPattern,
   findTestFiles,
   findPreloadPath,
   findChangedTestFiles,
@@ -870,3 +879,8 @@ export default {
   runIsolated,
   getOptimalParallelCount,
 };
+
+export {
+  filterTestsByPathPattern,
+  parseTestPathPatternFlag,
+} from './test-path-patterns';

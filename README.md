@@ -71,6 +71,10 @@ npx bun-isolated --preload ./bun.preload.ts
 # Exclude paths (repeatable)
 npx bun-isolated --exclude src/app --exclude e2e
 
+# Run only paths matching expression (substring or regex)
+npx bun-isolated --testPathPattern=shared-ui/services
+npx bun-isolated --testPathPattern="^shared-utils/src/.*\\.test\\.ts$"
+
 # Fail fast after first failed file
 npx bun-isolated --bail
 
@@ -157,6 +161,7 @@ export default {
  parallel: 4, // Number of parallel workers
  timeout: 30000, // Per-test timeout (ms)
  retries: 0, // Retry failed tests
+ testPathPatterns: ['shared-ui/services'], // Optional path filters
  bail: false, // Stop after first failed file
  maxFailures: Infinity, // Or set a number, e.g. 3
  telemetryEnabled: true, // Disable with false

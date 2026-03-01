@@ -1,6 +1,6 @@
 {
   "name": "@affectively/bun-isolated-runner",
-  "version": "1.3.0",
+  "version": "1.3.3",
   "description": "Run Bun tests in isolated subprocesses to prevent mock pollution and global state leakage.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -39,7 +39,7 @@
     "vitest"
   ],
   "author": "AFFECTIVELY <opensource@affectively.ai>",
-  "license": "MIT",
+  "license": "UNLICENSED",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/affectively-ai/bun-isolated-runner.git"

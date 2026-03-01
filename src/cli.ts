@@ -79,10 +79,7 @@ export function parseCliArgs(
     mode: 'all',
     specificFiles: [],
     testPathPatterns: [],
-    parallel: parseNumberWithFallback(
-      getOptimalParallelCount(),
-      env['JOBS']
-    ),
+    parallel: parseNumberWithFallback(getOptimalParallelCount(), env['JOBS']),
     timeout: parseNumberWithFallback(30000, env['BUN_ISOLATED_TIMEOUT']),
     retries: 0,
     bail: false,
@@ -129,7 +126,9 @@ export function parseCliArgs(
 
     if (arg === '--files') {
       parsed.mode = 'files';
-      parsed.specificFiles = args.slice(i + 1).filter((a) => !a.startsWith('-'));
+      parsed.specificFiles = args
+        .slice(i + 1)
+        .filter((a) => !a.startsWith('-'));
       break;
     }
 

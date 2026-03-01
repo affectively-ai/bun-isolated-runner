@@ -83,7 +83,10 @@ describe('cli parseCliArgs', () => {
   });
 
   it('treats explicit test file args as files mode', () => {
-    const parsed = parseCliArgs(['shared-ui/foo.test.ts', 'shared-utils/bar.spec.ts']);
+    const parsed = parseCliArgs([
+      'shared-ui/foo.test.ts',
+      'shared-utils/bar.spec.ts',
+    ]);
 
     expect(parsed.mode).toBe('files');
     expect(parsed.specificFiles).toEqual([

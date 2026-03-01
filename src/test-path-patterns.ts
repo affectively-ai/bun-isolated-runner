@@ -17,7 +17,8 @@ function isTestPathPatternKey(arg: string): boolean {
 
 function isTestPathPatternEqualsKey(arg: string): boolean {
   return (
-    arg.startsWith('--testPathPattern=') || arg.startsWith('--testPathPatterns=')
+    arg.startsWith('--testPathPattern=') ||
+    arg.startsWith('--testPathPatterns=')
   );
 }
 
